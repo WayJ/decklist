@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "myutil": {
+      "source": "../fixture-src",
+      "sourceType": "local",
+      "computedHash": "4ec8561c1a4cc3def68e0bdaf6d54315a64bb078a4ca76787cea63c20b5a87d9"
+    }
+  }
+}
