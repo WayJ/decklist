@@ -1,0 +1,21 @@
+{
+  "name": "decklist",
+  "version": "0.1.0",
+  "description": "Declarative skill dependency manager: decklist.json + one-command install",
+  "type": "module",
+  "bin": {
+    "decklist": "bin/decklist.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "src",
+    "schema"
+  ],
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "license": "MIT"
+}

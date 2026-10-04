@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const USAGE = `decklist — declarative skill dependency manager
+
+Usage:
+  decklist install [-- <engine flags...>]   install everything in decklist.json
+  decklist add <source> [--skill <n>] [--pin <ref>]
+                                            install one source and record it
+  decklist list                             report installed / missing / drifted
+
+Options:
+  -h, --help       show this help
+  -V, --version    print version
+`;
+
+export function parseArgv(argv) {
+  const sep = argv.indexOf("--");
+  const rest = sep === -1 ? argv : argv.slice(0, sep);
+  const passthrough = sep === -1 ? [] : argv.slice(sep + 1);
+  const known = new Set(["install", "add", "list"]);
+  const command = rest.length > 0 && known.has(rest[0]) ? rest[0] : undefined;
+  return { command, rest: command ? rest.slice(1) : rest, passthrough };
+}
+
+export function flagValue(args, name) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === name) return args[i + 1];
+    if (arg.startsWith(name + "=")) return arg.slice(name.length + 1);
+  }
+  return undefined;
+}
+
+export function assertRuntime(version = process.version) {
+  const major = Number(version.slice(1).split(".")[0]);
+  return major >= 20 ? null : `decklist requires Node >= 20 (found ${version}); upgrade Node to continue.`;
+}
+
+async function main(argv) {
+  if (argv.includes("-h") || argv.includes("--help")) {
+    process.stdout.write(USAGE);
+    return 0;
+  }
+  if (argv.includes("-V") || argv.includes("--version")) {
+    const { version } = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url))));
+    process.stdout.write(version + "\n");
+    return 0;
+  }
+  const hint = assertRuntime();
+  if (hint) {
+    process.stderr.write(hint + "\n");
+    return 1;
+  }
+
+  const { command, rest, passthrough } = parseArgv(argv);
+  if (!command) {
+    process.stderr.write(USAGE);
+    return 1;
+  }
+
+  const cwd = process.cwd();
+  if (command === "install") {
+    const { runInstall } = await import("../src/commands/install.js");
+    return runInstall({ cwd, passthrough });
+  }
+  if (command === "add") {
+    const { runAdd } = await import("../src/commands/add.js");
+    return runAdd({ cwd, source: rest[0], skill: flagValue(rest, "--skill"), pin: flagValue(rest, "--pin") });
+  }
+  const { runList } = await import("../src/commands/list.js");
+  return runList({ cwd });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).then((c) => process.exit(c));
+}
