@@ -41,8 +41,10 @@ Lives at the project root, committed to the repo:
   `pin` (a tag, branch, or commit). Pins work with `owner/repo` shorthand
   sources; other source forms with a pin fail the entry.
 - **Naming convention:** key each entry by its engine-level skill name so skip
-  and drift detection match. If the names must differ, declare the `skill`
-  selector.
+  and drift detection match. For a multi-skill source (one repo shipping
+  several skills), or whenever the key must differ from the installed skill's
+  name, declare the `skill` selector — skip, drift, and list all probe the
+  engine state by that name.
 - There is no `agents` field — which agent to install into is a runtime
   choice, not a declaration.
 
@@ -90,7 +92,7 @@ rewrites it. Whether your repo commits it is your choice.
 ## Development
 
 ```
-node --test tests/
+node --test
 ```
 
 ## License

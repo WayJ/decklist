@@ -26,18 +26,20 @@ export async function runList({ cwd, engine = createSkillsEngine(), out = proces
   lock = lock ?? { entries: {} };
   const installed = await engine.installed({ cwd });
 
+  const selectors = new Set(Object.values(manifest.skills).map((d) => d.skill).filter(Boolean));
   for (const [name, dep] of Object.entries(manifest.skills)) {
+    const probe = dep.skill ?? name;
     const entry = lock.entries[name];
     const match = dep.pin
       ? entry?.resolved === dep.pin
-      : installed.has(name) && entry?.resolved !== undefined && entry.resolved === installed.get(name).hash;
-    const state = !installed.has(name) && !dep.pin ? "missing"
+      : installed.has(probe) && entry?.resolved !== undefined && entry.resolved === installed.get(probe).hash;
+    const state = !installed.has(probe) ? "missing"
       : match ? "installed"
       : "drifted";
     write(`${state} ${name}`);
   }
   for (const name of installed.keys()) {
-    if (!(name in manifest.skills)) write(`undeclared ${name}`);
+    if (!(name in manifest.skills) && !selectors.has(name)) write(`undeclared ${name}`);
   }
   return 0;
 }

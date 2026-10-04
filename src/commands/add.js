@@ -22,6 +22,14 @@ export async function runAdd({ cwd, engine = createSkillsEngine(), source, skill
   }
 
   const name = skill ?? defaultName(source);
+  let lock;
+  try {
+    lock = readLockfile(cwd) ?? emptyLock({ name: engine.name, invocation: engine.invocation });
+  } catch (e) {
+    write(String(e.message));
+    return 1;
+  }
+
   const manifestFile = cwd + "/decklist.json";
   let doc = {};
   if (existsSync(manifestFile)) {
@@ -38,7 +46,6 @@ export async function runAdd({ cwd, engine = createSkillsEngine(), source, skill
     : source;
   writeFileSync(manifestFile, JSON.stringify(doc, null, 2) + "\n");
 
-  const lock = readLockfile(cwd) ?? emptyLock({ name: engine.name, invocation: engine.invocation });
   upsertEntry(lock, name, { source, resolved: installResult.resolved });
   writeLockfile(cwd, lock);
   write(`added ${name} (${source})`);

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runInstall } from "../src/commands/install.js";
+import { runAdd } from "../src/commands/add.js";
+import { runList } from "../src/commands/list.js";
 
 const USAGE = `decklist — declarative skill dependency manager
 
@@ -38,6 +41,22 @@ export function assertRuntime(version = process.version) {
   return major >= 20 ? null : `decklist requires Node >= 20 (found ${version}); upgrade Node to continue.`;
 }
 
+export function buildCall(command, { cwd, rest = [], passthrough = [] } = {}) {
+  if (command === "install") return { fn: runInstall, args: { cwd, passthrough } };
+  if (command === "add") {
+    return {
+      fn: runAdd,
+      args: { cwd, source: rest[0], skill: flagValue(rest, "--skill"), pin: flagValue(rest, "--pin"), passthrough },
+    };
+  }
+  return { fn: runList, args: { cwd } };
+}
+
+export function handleRejection(e, err = process.stderr) {
+  err.write(`${e?.message ?? String(e)}\n`);
+  return 1;
+}
+
 async function main(argv) {
   if (argv.includes("-h") || argv.includes("--help")) {
     process.stdout.write(USAGE);
@@ -61,18 +80,13 @@ async function main(argv) {
   }
 
   const cwd = process.cwd();
-  if (command === "install") {
-    const { runInstall } = await import("../src/commands/install.js");
-    return runInstall({ cwd, passthrough });
-  }
-  if (command === "add") {
-    const { runAdd } = await import("../src/commands/add.js");
-    return runAdd({ cwd, source: rest[0], skill: flagValue(rest, "--skill"), pin: flagValue(rest, "--pin") });
-  }
-  const { runList } = await import("../src/commands/list.js");
-  return runList({ cwd });
+  const { fn, args } = buildCall(command, { cwd, rest, passthrough });
+  return fn(args);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).then((c) => process.exit(c));
+  main(process.argv.slice(2)).then(
+    (c) => process.exit(c),
+    (e) => process.exit(handleRejection(e)),
+  );
 }

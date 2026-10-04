@@ -1,7 +1,7 @@
 // tests/install.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EngineError } from "../src/engine.js";
@@ -63,7 +63,8 @@ test("pin match skips; pin mismatch installs and records pin", async () => {
   const dir = tmp();
   writeManifest(dir, { x: { source: "o/x", pin: "v1" }, y: { source: "o/y", pin: "v2" } });
   writeLock(dir, { x: { source: "o/x", resolved: "v1" }, y: { source: "o/y", resolved: "v1" } });
-  const { engine, calls } = fakeEngine(new Map());
+  const installedMap = new Map([["x", { source: "o/x", hash: "v1" }], ["y", { source: "o/y", hash: "v1" }]]);
+  const { engine, calls } = fakeEngine(installedMap);
   const code = await runInstall({ cwd: dir, engine, out: lines().out });
   assert.equal(code, 0);
   assert.deepEqual(calls.map((r) => r.source), ["o/y"]);
@@ -112,4 +113,62 @@ test("no manifest exits 1 and suggests decklist add", async () => {
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 1);
   assert.match(list.join(""), /decklist add/);
+});
+
+test("corrupt lock → one-line error, exit 1 (C1)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { a: "o/r" });
+  writeFileSync(join(dir, "decklist.lock"), "{oops");
+  const { engine } = fakeEngine(new Map());
+  const { list, out } = lines();
+  const code = await runInstall({ cwd: dir, engine, out });
+  assert.equal(code, 1);
+  assert.match(list.join(""), /decklist\.lock: invalid JSON/);
+});
+
+test("corrupt manifest → one-line error, exit 1 (C1/Review Focus 5)", async () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "decklist.json"), "not json");
+  const { engine } = fakeEngine(new Map());
+  const { list, out } = lines();
+  const code = await runInstall({ cwd: dir, engine, out });
+  assert.equal(code, 1);
+  assert.match(list.join(""), /decklist\.json: invalid JSON/);
+});
+
+test("fresh clone with committed lock installs pinned and hashed entries (C2)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { p: { source: "o/p", pin: "v1" }, h: "o/h" });
+  writeLock(dir, { p: { source: "o/p", resolved: "v1" }, h: { source: "o/h", resolved: "h1" } });
+  const { engine, calls } = fakeEngine(new Map());
+  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  assert.equal(code, 0);
+  assert.deepEqual(calls.map((r) => r.source).sort(), ["o/h", "o/p"]);
+});
+
+test("selector matches installed state keyed by engine name (C3)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { pw: { source: "o/pw", skill: "playwright" } });
+  writeLock(dir, { pw: { source: "o/pw", resolved: "h1" } });
+  const installedMap = new Map([["playwright", { source: "o/pw", hash: "h1" }]]);
+  const { engine, calls } = fakeEngine(installedMap);
+  const { list, out } = lines();
+  const code = await runInstall({ cwd: dir, engine, out });
+  assert.equal(code, 0);
+  assert.equal(calls.length, 0);
+  assert.match(list.join(""), /ok pw/);
+});
+
+test("hash drift warns with locked vs now (I2)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { a: "o/r" });
+  writeLock(dir, { a: { source: "o/r", resolved: "h9" } });
+  const installedMap = new Map([["a", { source: "o/r", hash: "h1" }]]);
+  const { engine } = fakeEngine(installedMap);
+  const { list, out } = lines();
+  const code = await runInstall({ cwd: dir, engine, out });
+  assert.equal(code, 0);
+  const text = list.join("");
+  assert.match(text, /drifted a: locked h9, now h1/);
+  assert.match(text, /installed a/);
 });

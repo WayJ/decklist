@@ -82,3 +82,16 @@ test("engine failure touches nothing — Review Focus 3", async () => {
   assert.equal(readFileSync(join(dir, "decklist.json"), "utf8"), before);
   assert.match(list.join(""), /boom/);
 });
+
+test("corrupt lock → one-line error, manifest untouched (C1)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { existing: "o/e" });
+  const before = readFileSync(join(dir, "decklist.json"), "utf8");
+  writeFileSync(join(dir, "decklist.lock"), "{oops");
+  const { engine } = fakeEngine();
+  const { list, out } = lines();
+  const code = await runAdd({ cwd: dir, engine, source: "o/r", out });
+  assert.equal(code, 1);
+  assert.equal(readFileSync(join(dir, "decklist.json"), "utf8"), before);
+  assert.match(list.join(""), /decklist\.lock: invalid JSON/);
+});

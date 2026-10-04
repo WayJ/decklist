@@ -53,3 +53,33 @@ test("no manifest exits 1", async () => {
   assert.equal(code, 1);
   assert.match(list.join(""), /decklist add/);
 });
+
+test("selector entry reports installed, never missing+undeclared (C3)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { pw: { source: "o/pw", skill: "playwright" } });
+  const lock = emptyLock();
+  upsertEntry(lock, "pw", { source: "o/pw", resolved: "h1" });
+  writeLockfile(dir, lock);
+  const engine = fakeEngine(new Map([["playwright", { source: "o/pw", hash: "h1" }]]));
+  const { list, out } = lines();
+  const code = await runList({ cwd: dir, engine, out });
+  const text = list.join("");
+  assert.equal(code, 0);
+  assert.match(text, /installed pw/);
+  assert.doesNotMatch(text, /missing pw/);
+  assert.doesNotMatch(text, /undeclared playwright/);
+});
+
+test("pinned entry absent on disk reports missing, not installed (C2/C3)", async () => {
+  const dir = tmp();
+  writeManifest(dir, { p: { source: "o/p", pin: "v1" } });
+  const lock = emptyLock();
+  upsertEntry(lock, "p", { source: "o/p", resolved: "v1" });
+  writeLockfile(dir, lock);
+  const { list, out } = lines();
+  const code = await runList({ cwd: dir, engine: fakeEngine(new Map()), out });
+  const text = list.join("");
+  assert.equal(code, 0);
+  assert.match(text, /missing p/);
+  assert.doesNotMatch(text, /installed p/);
+});

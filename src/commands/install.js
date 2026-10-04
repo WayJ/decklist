@@ -16,15 +16,22 @@ export async function runInstall({ cwd, engine = createSkillsEngine(), passthrou
     return 1;
   }
 
-  const lock = readLockfile(cwd) ?? emptyLock({ name: engine.name, invocation: engine.invocation });
+  let lock;
+  try {
+    lock = readLockfile(cwd) ?? emptyLock({ name: engine.name, invocation: engine.invocation });
+  } catch (e) {
+    write(String(e.message));
+    return 1;
+  }
   const installed = await engine.installed({ cwd });
 
   let ok = 0, skipped = 0, failed = 0;
   for (const [name, dep] of Object.entries(manifest.skills)) {
+    const probe = dep.skill ?? name;
     const entry = lock.entries[name];
     const skip = dep.pin
-      ? entry?.resolved === dep.pin
-      : installed.has(name) && entry?.resolved !== undefined && entry.resolved === installed.get(name).hash;
+      ? entry?.resolved === dep.pin && installed.has(probe)
+      : installed.has(probe) && entry?.resolved !== undefined && entry.resolved === installed.get(probe).hash;
     if (skip) {
       write(`ok ${name}`);
       skipped++;
@@ -33,6 +40,9 @@ export async function runInstall({ cwd, engine = createSkillsEngine(), passthrou
     try {
       const r = await engine.install(dep, { cwd, passthrough });
       const resolved = dep.pin ?? r.resolved;
+      if (!dep.pin && entry?.resolved !== undefined && entry.resolved !== resolved) {
+        write(`drifted ${name}: locked ${entry.resolved}, now ${resolved}`);
+      }
       upsertEntry(lock, name, { source: dep.source, resolved });
       write(`installed ${name}`);
       ok++;
