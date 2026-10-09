@@ -1,4 +1,4 @@
-// tests/integration.test.js — real engine, hermetic local fixture
+// tests/integration.test.js — real engine, dual-agent same-harness isolation
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -14,7 +14,6 @@ import { runList } from "../src/commands/list.js";
 
 const run = promisify(execFile);
 const FIXTURE_SRC = fileURLToPath(new URL("./fixtures/local-skill", import.meta.url));
-const PASSTHROUGH = ["-a", "claude-code"];
 
 let engineAvailable = false;
 try {
@@ -32,44 +31,68 @@ const counting = () => {
   return { calls, engine: { ...engine, install: async (ref, opts) => { calls.push(ref); return engine.install(ref, opts); } } };
 };
 
+const AGENTS = { dev: { harness: "claude-code", skills: {} }, test: { harness: "claude-code", skills: {} } };
+const writeManifest = (dir, agents = AGENTS) =>
+  writeFileSync(join(dir, "decklist.json"), JSON.stringify({ agents }, null, 2) + "\n");
+
 async function seed(dir) {
-  const { engine } = counting();
-  const code = await runAdd({ cwd: dir, engine, source: FIXTURE_SRC, skill: "myutil", passthrough: PASSTHROUGH, out: lines().out });
+  writeManifest(dir);
+  const { engine, calls } = counting();
+  const code = await runAdd({ cwd: dir, engine, source: FIXTURE_SRC, agent: "dev", skill: "myutil", out: lines().out });
   assert.equal(code, 0);
-  return engine;
+  return { engine, calls };
 }
 
-test("add → manifest + lock grown, skill on disk", { skip: !engineAvailable }, async () => {
+test("add installs into the agent's own directory", { skip: !engineAvailable }, async () => {
   const dir = tmp();
   await seed(dir);
   const manifest = JSON.parse(readFileSync(join(dir, "decklist.json"), "utf8"));
-  assert.equal(manifest.skills.myutil.source, FIXTURE_SRC);
+  assert.equal(manifest.agents.dev.skills.myutil.skill, "myutil");
+  assert.equal(manifest.agents.dev.skills.myutil.source, FIXTURE_SRC);
   const lock = JSON.parse(readFileSync(join(dir, "decklist.lock"), "utf8"));
-  assert.ok(typeof lock.entries.myutil.resolved === "string");
-  assert.ok(existsSync(join(dir, ".claude", "skills", "myutil", "SKILL.md")));
+  assert.ok(typeof lock.entries["dev/myutil"].resolved === "string");
+  assert.ok(existsSync(join(dir, "agents", "dev", ".claude", "skills", "myutil", "SKILL.md")));
+});
+
+test("same skill under two agents on the same harness stays isolated", { skip: !engineAvailable }, async () => {
+  const dir = tmp();
+  await seed(dir);
+  const manifest = JSON.parse(readFileSync(join(dir, "decklist.json"), "utf8"));
+  manifest.agents.test.skills.myutil = { source: FIXTURE_SRC, skill: "myutil" };
+  writeManifest(dir, manifest.agents);
+  const { engine, calls } = counting();
+  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  assert.equal(code, 0);
+  assert.equal(calls.length, 1); // only the test agent's copy was missing
+  assert.ok(existsSync(join(dir, "agents", "dev", ".claude", "skills", "myutil", "SKILL.md")));
+  assert.ok(existsSync(join(dir, "agents", "test", ".claude", "skills", "myutil", "SKILL.md")));
+  assert.ok(existsSync(join(dir, "agents", "dev", "skills-lock.json")));
+  assert.ok(existsSync(join(dir, "agents", "test", "skills-lock.json")));
 });
 
 test("second install skips (no engine churn)", { skip: !engineAvailable }, async () => {
   const dir = tmp();
-  const { engine, calls } = counting();
   await seed(dir);
-  await runInstall({ cwd: dir, engine, passthrough: PASSTHROUGH, out: lines().out });
+  const { engine, calls } = counting();
+  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  assert.equal(code, 0);
   assert.equal(calls.length, 0);
 });
 
 test("deleting the lock forces reinstall", { skip: !engineAvailable }, async () => {
   const dir = tmp();
   await seed(dir);
-  const { engine, calls } = counting();
   unlinkSync(join(dir, "decklist.lock"));
-  await runInstall({ cwd: dir, engine, passthrough: PASSTHROUGH, out: lines().out });
+  const { engine, calls } = counting();
+  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  assert.equal(code, 0);
   assert.ok(calls.length >= 1);
 });
 
-test("list reports installed and undeclared", { skip: !engineAvailable }, async () => {
+test("list reports per agent; undeclared stays inside its agent", { skip: !engineAvailable }, async () => {
   const dir = tmp();
   await seed(dir);
-  const engineLockFile = join(dir, "skills-lock.json");
+  const engineLockFile = join(dir, "agents", "dev", "skills-lock.json");
   const engineLock = JSON.parse(readFileSync(engineLockFile, "utf8"));
   engineLock.skills.ghost = { source: "nowhere", sourceType: "local", computedHash: "deadbeef" };
   writeFileSync(engineLockFile, JSON.stringify(engineLock, null, 2) + "\n");
@@ -77,6 +100,6 @@ test("list reports installed and undeclared", { skip: !engineAvailable }, async 
   const code = await runList({ cwd: dir, engine: createSkillsEngine(), out });
   const text = list.join("");
   assert.equal(code, 0);
-  assert.match(text, /installed myutil/);
-  assert.match(text, /undeclared ghost/);
+  assert.match(text, /dev installed myutil/);
+  assert.match(text, /dev undeclared ghost/);
 });
