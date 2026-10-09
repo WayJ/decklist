@@ -104,7 +104,7 @@ decklist 从"skill 依赖管理器"升级为**声明式多 agent 环境定义**:
 |---|---|
 | `src/manifest.js` | 解析 v2 模型(基础字段 + agents);新校验(agent 名、harness 非空、persona ≤2000);顶层 `skills` 拒绝 |
 | `src/lockfile.js` | 不变(键格式是调用方约定) |
-| `src/engine.js` | 不变(argv 构造、spawn、installed 读取已参数化 cwd) |
+| `src/engine.js` | `install(ref)` 的 ref 增加 `harness` 字段 → argv 注入 `-a <harness>`(置于 passthrough 之前;ref 无 harness 时不注入,行为同 v0);spawn、`installed` 读取、其余 argv 构造不变 |
 | `src/commands/install.js` | agent 循环 + 目录 mkdir + 每 agent 的 installed 读取 + 行前缀 |
 | `src/commands/add.js` | `--agent` 必填校验、目标目录与 lock 键 |
 | `src/commands/list.js` | 分组输出 |
