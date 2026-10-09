@@ -63,10 +63,10 @@ test("assertRuntime flags pre-20 Node with a fix hint", () => {
   assert.equal(assertRuntime(process.version), null);
 });
 
-test("buildCall wires each command, add carries passthrough (I1)", () => {
-  const add = buildCall("add", { cwd: "/x", rest: ["o/r", "--skill", "s", "--pin", "v1"], passthrough: ["-a", "cc"] });
+test("buildCall wires each command, add carries agent and passthrough (I1)", () => {
+  const add = buildCall("add", { cwd: "/x", rest: ["o/r", "--agent", "dev", "--skill", "s", "--pin", "v1"], passthrough: ["-a", "cc"] });
   assert.equal(add.fn, runAdd);
-  assert.deepEqual(add.args, { cwd: "/x", source: "o/r", skill: "s", pin: "v1", passthrough: ["-a", "cc"] });
+  assert.deepEqual(add.args, { cwd: "/x", source: "o/r", agent: "dev", skill: "s", pin: "v1", passthrough: ["-a", "cc"] });
   const install = buildCall("install", { cwd: "/x", rest: [], passthrough: ["-g"] });
   assert.equal(install.fn, runInstall);
   assert.deepEqual(install.args, { cwd: "/x", passthrough: ["-g"] });

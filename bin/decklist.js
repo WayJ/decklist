@@ -5,12 +5,12 @@ import { runInstall } from "../src/commands/install.js";
 import { runAdd } from "../src/commands/add.js";
 import { runList } from "../src/commands/list.js";
 
-const USAGE = `decklist — declarative skill dependency manager
+const USAGE = `decklist — declarative multi-agent environment definition
 
 Usage:
-  decklist install [-- <engine flags...>]   install everything in decklist.json
-  decklist add <source> [--skill <n>] [--pin <ref>]
-                                            install one source and record it
+  decklist install [-- <engine flags...>]   install every declared agent's skills
+  decklist add <source> --agent <name> [--skill <n>] [--pin <ref>]
+                                            install one source into a declared agent
   decklist list                             report installed / missing / drifted
 
 Options:
@@ -46,7 +46,10 @@ export function buildCall(command, { cwd, rest = [], passthrough = [] } = {}) {
   if (command === "add") {
     return {
       fn: runAdd,
-      args: { cwd, source: rest[0], skill: flagValue(rest, "--skill"), pin: flagValue(rest, "--pin"), passthrough },
+      args: {
+        cwd, source: rest[0], agent: flagValue(rest, "--agent"),
+        skill: flagValue(rest, "--skill"), pin: flagValue(rest, "--pin"), passthrough,
+      },
     };
   }
   return { fn: runList, args: { cwd } };
