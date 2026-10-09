@@ -1,28 +1,47 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "decklist manifest",
+  "description": "Declarative multi-agent environment definition",
   "type": "object",
+  "additionalProperties": false,
+  "required": ["agents"],
   "properties": {
     "$schema": { "type": "string" },
-    "skills": {
+    "name": { "type": "string", "pattern": "^[a-z0-9-~][a-z0-9-._~]*$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "description": { "type": "string", "minLength": 1 },
+    "private": { "type": "boolean" },
+    "license": { "type": "string", "minLength": 1 },
+    "author": { "type": "string", "minLength": 1 },
+    "agents": {
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          { "type": "string", "minLength": 1 },
-          {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["harness", "skills"],
+        "properties": {
+          "harness": { "type": "string", "minLength": 1 },
+          "persona": { "type": "string", "maxLength": 2000 },
+          "skills": {
             "type": "object",
-            "properties": {
-              "source": { "type": "string", "minLength": 1 },
-              "skill": { "type": "string" },
-              "pin": { "type": "string" }
-            },
-            "required": ["source"],
-            "additionalProperties": false
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string", "minLength": 1 },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["source"],
+                  "properties": {
+                    "source": { "type": "string", "minLength": 1 },
+                    "skill": { "type": "string", "minLength": 1 },
+                    "pin": { "type": "string", "minLength": 1 }
+                  }
+                }
+              ]
+            }
           }
-        ]
+        }
       }
     }
-  },
-  "required": ["skills"],
-  "additionalProperties": false
+  }
 }
