@@ -2,6 +2,16 @@
   "name": "decklist",
   "version": "0.1.0",
   "description": "Declarative skill dependency manager: decklist.json + one-command install",
+  "keywords": ["skills", "agent", "claude", "ai", "dependency-manager", "cli"],
+  "author": "WayJ",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/WayJ/decklist.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WayJ/decklist/issues"
+  },
+  "homepage": "https://github.com/WayJ/decklist#readme",
   "type": "module",
   "bin": {
     "decklist": "bin/decklist.js"
