@@ -12,6 +12,15 @@ export class EngineError extends Error {
 
 const SHORTHAND = /^(?!\.)[\w.-]+\/(?!\.)[\w.-]+$/;
 
+export function agentFlagConflict(passthrough = []) {
+  for (const token of passthrough) {
+    if (token === "-a" || token === "--agent" || token.startsWith("-a=") || token.startsWith("--agent=")) {
+      return token;
+    }
+  }
+  return null;
+}
+
 function sourceArg(ref) {
   if (!ref.pin) return ref.source;
   if (SHORTHAND.test(ref.source)) {
@@ -60,7 +69,11 @@ export function createSkillsEngine({ spawnImpl = nodeSpawn } = {}) {
     invocation: "npx skills",
     async install(ref, { cwd, passthrough = [] } = {}) {
       const arg = sourceArg(ref);
-      const args = ["-y", "skills", "add", arg, "-y", "-s", ref.skill ?? "*", ...passthrough];
+      const args = [
+        "-y", "skills", "add", arg, "-y", "-s", ref.skill ?? "*",
+        ...(ref.harness ? ["-a", ref.harness] : []),
+        ...passthrough,
+      ];
       await runSpawn(spawnImpl, cwd, args, ref.source);
       const hash = pickHash(readEngineLock(cwd), ref.skill);
       const resolved = ref.pin ?? hash;

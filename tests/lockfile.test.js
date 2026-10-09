@@ -38,6 +38,6 @@ test("upsert without resolved omits the field; dropStale removes only stale and 
   upsertEntry(lock, "keep", { source: "o/r", resolved: "h1" });
   upsertEntry(lock, "gone", { source: "x/y" });
   assert.equal("resolved" in lock.entries.gone, false);
-  assert.equal(dropStale(lock, { keep: {} }), 1);
+  assert.equal(dropStale(lock, new Set(["keep"])), 1);
   assert.deepEqual(Object.keys(lock.entries), ["keep"]);
 });

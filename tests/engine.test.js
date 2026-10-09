@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EngineError, createSkillsEngine } from "../src/engine.js";
+import { EngineError, createSkillsEngine, agentFlagConflict } from "../src/engine.js";
 
 const FIXTURE_DIR = fileURLToPath(new URL("./fixtures/engine", import.meta.url));
 const HASH = "4ec8561c1a4cc3def68e0bdaf6d54315a64bb078a4ca76787cea63c20b5a87d9";
@@ -61,6 +61,27 @@ test("argv: passthrough appended verbatim", async () => {
   const { rec, spawn } = fakeSpawn();
   await engineWith(spawn).install({ source: "o/r" }, { cwd: tmp(), passthrough: ["-a", "claude-code"] });
   assert.deepEqual(rec.args.slice(-2), ["-a", "claude-code"]);
+});
+
+test("argv: harness injects -a <harness> before passthrough", async () => {
+  const { rec, spawn } = fakeSpawn();
+  await engineWith(spawn).install({ source: "o/r", harness: "claude-code" }, { cwd: tmp() });
+  assert.deepEqual(rec.args, ["-y", "skills", "add", "o/r", "-y", "-s", "*", "-a", "claude-code"]);
+  const { rec: rec2, spawn: spawn2 } = fakeSpawn();
+  await engineWith(spawn2).install({ source: "o/r", harness: "cc" }, { cwd: tmp(), passthrough: ["-q"] });
+  assert.deepEqual(rec2.args.slice(-3), ["-a", "cc", "-q"]);
+});
+
+test("agentFlagConflict matches -a/--agent tokens and =-forms only", () => {
+  assert.equal(agentFlagConflict(["-a", "x"]), "-a");
+  assert.equal(agentFlagConflict(["--agent", "x"]), "--agent");
+  assert.equal(agentFlagConflict(["-a=cc"]), "-a=cc");
+  assert.equal(agentFlagConflict(["--agent=cc"]), "--agent=cc");
+  assert.equal(agentFlagConflict(["-q", "--agent=x"]), "--agent=x");
+  assert.equal(agentFlagConflict(["-g"]), null);
+  assert.equal(agentFlagConflict(["-ar", "x"]), null);
+  assert.equal(agentFlagConflict(["--agents"]), null);
+  assert.equal(agentFlagConflict([]), null);
 });
 
 test("success resolves pin over hash; skill-selected hash; unique-entry hash; omitted when ambiguous", async () => {

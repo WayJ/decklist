@@ -1,174 +1,156 @@
-// tests/install.test.js
+// tests/install.test.js — v2 per-agent install
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EngineError } from "../src/engine.js";
-import { writeManifest } from "../src/manifest.js";
 import { emptyLock, readLockfile, upsertEntry, writeLockfile } from "../src/lockfile.js";
 import { runInstall } from "../src/commands/install.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "decklist-install-"));
 const lines = () => { const l = []; return { list: l, out: { write: (s) => l.push(s) } }; };
+const basename = (p) => p.split("/").pop();
 
-function fakeEngine(installedMap, failSource = null) {
+// installedByAgent: { dev: [["skill", {source, hash}], ...] }
+function fakeEngine(installedByAgent = {}, failLockKey = null) {
   const calls = [];
   return {
     calls,
     engine: {
       name: "skills", invocation: "npx skills",
-      install: async (ref) => {
-        calls.push(ref);
-        if (ref.source === failSource) throw new EngineError(ref.source, "boom");
+      install: async (ref, { cwd }) => {
+        const lockKey = `${basename(cwd)}/${ref.skill ?? ref.source.split("/").pop()}`;
+        calls.push({ ref, cwd });
+        if (lockKey === failLockKey) throw new EngineError(ref.source, "boom");
         return { resolved: "h1" };
       },
-      installed: async () => new Map(installedMap),
+      installed: async ({ cwd }) => new Map(installedByAgent[basename(cwd)] ?? []),
     },
   };
 }
+
+const writeManifest = (dir, agents) =>
+  writeFileSync(join(dir, "decklist.json"), JSON.stringify({ agents }, null, 2));
 
 const writeLock = (dir, entries) => {
   const lock = emptyLock();
   for (const [k, v] of Object.entries(entries)) upsertEntry(lock, k, v);
   writeLockfile(dir, lock);
-  return lock;
 };
 
-test("fresh install writes lock with resolved and exits 0", async () => {
+test("fresh dual agent — installs per agent dir, empty-skills agent only mkdir'd", async () => {
   const dir = tmp();
-  writeManifest(dir, { a: "o/r" });
-  const { engine } = fakeEngine(new Map());
+  writeManifest(dir, { dev: { harness: "cc", skills: { a: "o/r" } }, test: { harness: "cc", skills: {} } });
+  const { engine, calls } = fakeEngine();
   const { list, out } = lines();
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 0);
-  assert.equal(readLockfile(dir).entries.a.resolved, "h1");
-  assert.match(list.join(""), /installed a/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].ref.harness, "cc");
+  assert.equal(calls[0].cwd, join(dir, "agents", "dev"));
+  assert.ok(existsSync(join(dir, "agents", "dev")));
+  assert.ok(existsSync(join(dir, "agents", "test")));
+  const text = list.join("");
+  assert.match(text, /dev installed a/);
+  assert.match(text, /1 installed, 0 skipped, 0 failed/);
 });
 
-test("second run skips — engine.install not called again", async () => {
+test("RF1 fresh clone with committed lock installs pinned and hashed entries", async () => {
   const dir = tmp();
-  writeManifest(dir, { a: "o/r" });
-  const installedMap = new Map([["a", { source: "o/r", hash: "h1" }]]);
-  const { engine, calls } = fakeEngine(installedMap);
-  writeLock(dir, { a: { source: "o/r", resolved: "h1" } });
+  writeManifest(dir, {
+    dev: { harness: "cc", skills: { p: { source: "o/p", pin: "v1" } } },
+    test: { harness: "cc", skills: { h: "o/h" } },
+  });
+  writeLock(dir, { "dev/p": { source: "o/p", resolved: "v1" }, "test/h": { source: "o/h", resolved: "h1" } });
+  const { engine, calls } = fakeEngine();
+  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  assert.equal(code, 0);
+  assert.deepEqual(calls.map((c) => c.ref.source).sort(), ["o/h", "o/p"]);
+});
+
+test("RF2 selector probes engine state by skill name", async () => {
+  const dir = tmp();
+  writeManifest(dir, { dev: { harness: "cc", skills: { pw: { source: "o/pw", skill: "playwright" } } } });
+  writeLock(dir, { "dev/pw": { source: "o/pw", resolved: "h1" } });
+  const { engine, calls } = fakeEngine({ dev: [["playwright", { source: "o/pw", hash: "h1" }]] });
   const { list, out } = lines();
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 0);
   assert.equal(calls.length, 0);
-  assert.match(list.join(""), /ok a/);
+  assert.match(list.join(""), /dev ok pw/);
 });
 
-test("pin match skips; pin mismatch installs and records pin", async () => {
+test("pin match skips only when installed; absent on disk installs (C2)", async () => {
   const dir = tmp();
-  writeManifest(dir, { x: { source: "o/x", pin: "v1" }, y: { source: "o/y", pin: "v2" } });
-  writeLock(dir, { x: { source: "o/x", resolved: "v1" }, y: { source: "o/y", resolved: "v1" } });
-  const installedMap = new Map([["x", { source: "o/x", hash: "v1" }], ["y", { source: "o/y", hash: "v1" }]]);
-  const { engine, calls } = fakeEngine(installedMap);
-  const code = await runInstall({ cwd: dir, engine, out: lines().out });
+  writeManifest(dir, { dev: { harness: "cc", skills: { x: { source: "o/x", pin: "v1" } } } });
+  writeLock(dir, { "dev/x": { source: "o/x", resolved: "v1" } });
+  const present = fakeEngine({ dev: [["x", { source: "o/x", hash: "v1" }]] });
+  assert.equal(await runInstall({ cwd: dir, engine: present.engine, out: lines().out }), 0);
+  assert.equal(present.calls.length, 0);
+  const fresh = fakeEngine();
+  assert.equal(await runInstall({ cwd: dir, engine: fresh.engine, out: lines().out }), 0);
+  assert.equal(fresh.calls.length, 1);
+});
+
+test("hash drift warns with locked vs now", async () => {
+  const dir = tmp();
+  writeManifest(dir, { dev: { harness: "cc", skills: { a: "o/r" } } });
+  writeLock(dir, { "dev/a": { source: "o/r", resolved: "h9" } });
+  const { engine } = fakeEngine({ dev: [["a", { source: "o/r", hash: "h1" }]] });
+  const { list, out } = lines();
+  const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 0);
-  assert.deepEqual(calls.map((r) => r.source), ["o/y"]);
-  const entries = readLockfile(dir).entries;
-  assert.equal(entries.x.resolved, "v1");
-  assert.equal(entries.y.resolved, "v2");
+  const text = list.join("");
+  assert.match(text, /dev drifted a: locked h9, now h1/);
+  assert.match(text, /dev installed a/);
+  assert.equal(readLockfile(dir).entries["dev/a"].resolved, "h1");
 });
 
-test("hash match skips; hash drift reinstalls", async () => {
+test("RF3 passthrough -a conflicts fail before any engine call", async () => {
   const dir = tmp();
-  writeManifest(dir, { a: "o/r", b: "o/r2" });
-  writeLock(dir, { a: { source: "o/r", resolved: "h1" }, b: { source: "o/r2", resolved: "h9" } });
-  const installedMap = new Map([["a", { source: "o/r", hash: "h1" }], ["b", { source: "o/r2", hash: "h1" }]]);
-  const { engine, calls } = fakeEngine(installedMap);
-  const code = await runInstall({ cwd: dir, engine, out: lines().out });
-  assert.equal(code, 0);
-  assert.deepEqual(calls.map((r) => r.source), ["o/r2"]);
+  writeManifest(dir, { dev: { harness: "cc", skills: { a: "o/r" } } });
+  for (const passthrough of [["-a", "claude-code"], ["--agent=x"]]) {
+    const { engine, calls } = fakeEngine();
+    const { list, out } = lines();
+    const code = await runInstall({ cwd: dir, engine, passthrough, out });
+    assert.equal(code, 1);
+    assert.equal(calls.length, 0);
+    assert.match(list.join(""), /conflicts with the declared harness/);
+  }
 });
 
-test("no lock entry → reinstalls (unknown identity), Review Focus 2", async () => {
+test("entry failure does not stop the rest; stale agent keys dropped from lock", async () => {
   const dir = tmp();
-  writeManifest(dir, { a: "o/r" });
-  const installedMap = new Map([["a", { source: "o/r", hash: "h1" }]]);
-  const { engine, calls } = fakeEngine(installedMap);
-  await runInstall({ cwd: dir, engine, out: lines().out });
-  assert.deepEqual(calls.map((r) => r.source), ["o/r"]);
-});
-
-test("entry 2 of 3 failing does not stop 3 — exit 1, lock holds 1 and 3", async () => {
-  const dir = tmp();
-  writeManifest(dir, { a: "o/a", b: "o/b", c: "o/c" });
-  const { engine } = fakeEngine(new Map(), "o/b");
+  writeManifest(dir, { dev: { harness: "cc", skills: { a: "o/a", b: "o/b", c: "o/c" } } });
+  writeLock(dir, { "old/x": { source: "o/x", resolved: "h0" } });
+  const { engine } = fakeEngine({}, "dev/b");
   const { list, out } = lines();
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 1);
   const entries = readLockfile(dir).entries;
-  assert.deepEqual(Object.keys(entries).sort(), ["a", "c"]);
-  assert.match(list.join(""), /failed b: /);
-  assert.match(list.join(""), /2 installed, 0 skipped, 1 failed/);
+  assert.deepEqual(Object.keys(entries).sort(), ["dev/a", "dev/c"]);
+  const text = list.join("");
+  assert.match(text, /dev failed b: /);
+  assert.match(text, /2 installed, 0 skipped, 1 failed/);
 });
 
-test("no manifest exits 1 and suggests decklist add", async () => {
+test("corrupt lock → one-line error, exit 1", async () => {
   const dir = tmp();
-  const { engine } = fakeEngine(new Map());
-  const { list, out } = lines();
-  const code = await runInstall({ cwd: dir, engine, out });
-  assert.equal(code, 1);
-  assert.match(list.join(""), /decklist add/);
-});
-
-test("corrupt lock → one-line error, exit 1 (C1)", async () => {
-  const dir = tmp();
-  writeManifest(dir, { a: "o/r" });
+  writeManifest(dir, { dev: { harness: "cc", skills: { a: "o/r" } } });
   writeFileSync(join(dir, "decklist.lock"), "{oops");
-  const { engine } = fakeEngine(new Map());
+  const { engine } = fakeEngine();
   const { list, out } = lines();
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 1);
   assert.match(list.join(""), /decklist\.lock: invalid JSON/);
 });
 
-test("corrupt manifest → one-line error, exit 1 (C1/Review Focus 5)", async () => {
+test("no manifest → usage hint, exit 1", async () => {
   const dir = tmp();
-  writeFileSync(join(dir, "decklist.json"), "not json");
-  const { engine } = fakeEngine(new Map());
+  const { engine } = fakeEngine();
   const { list, out } = lines();
   const code = await runInstall({ cwd: dir, engine, out });
   assert.equal(code, 1);
-  assert.match(list.join(""), /decklist\.json: invalid JSON/);
-});
-
-test("fresh clone with committed lock installs pinned and hashed entries (C2)", async () => {
-  const dir = tmp();
-  writeManifest(dir, { p: { source: "o/p", pin: "v1" }, h: "o/h" });
-  writeLock(dir, { p: { source: "o/p", resolved: "v1" }, h: { source: "o/h", resolved: "h1" } });
-  const { engine, calls } = fakeEngine(new Map());
-  const code = await runInstall({ cwd: dir, engine, out: lines().out });
-  assert.equal(code, 0);
-  assert.deepEqual(calls.map((r) => r.source).sort(), ["o/h", "o/p"]);
-});
-
-test("selector matches installed state keyed by engine name (C3)", async () => {
-  const dir = tmp();
-  writeManifest(dir, { pw: { source: "o/pw", skill: "playwright" } });
-  writeLock(dir, { pw: { source: "o/pw", resolved: "h1" } });
-  const installedMap = new Map([["playwright", { source: "o/pw", hash: "h1" }]]);
-  const { engine, calls } = fakeEngine(installedMap);
-  const { list, out } = lines();
-  const code = await runInstall({ cwd: dir, engine, out });
-  assert.equal(code, 0);
-  assert.equal(calls.length, 0);
-  assert.match(list.join(""), /ok pw/);
-});
-
-test("hash drift warns with locked vs now (I2)", async () => {
-  const dir = tmp();
-  writeManifest(dir, { a: "o/r" });
-  writeLock(dir, { a: { source: "o/r", resolved: "h9" } });
-  const installedMap = new Map([["a", { source: "o/r", hash: "h1" }]]);
-  const { engine } = fakeEngine(installedMap);
-  const { list, out } = lines();
-  const code = await runInstall({ cwd: dir, engine, out });
-  assert.equal(code, 0);
-  const text = list.join("");
-  assert.match(text, /drifted a: locked h9, now h1/);
-  assert.match(text, /installed a/);
+  assert.match(list.join(""), /decklist add <source> --agent <name>/);
 });

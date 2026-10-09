@@ -40,10 +40,10 @@ export function upsertEntry(lock, name, { source, resolved }) {
   return lock;
 }
 
-export function dropStale(lock, manifestSkills) {
+export function dropStale(lock, keys) {
   let dropped = 0;
   for (const name of Object.keys(lock.entries)) {
-    if (!(name in manifestSkills)) {
+    if (!keys.has(name)) {
       delete lock.entries[name];
       dropped++;
     }
