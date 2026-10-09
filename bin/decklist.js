@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runInstall } from "../src/commands/install.js";
 import { runAdd } from "../src/commands/add.js";
@@ -84,7 +84,10 @@ async function main(argv) {
   return fn(args);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Realpath argv[1]: npm/npx invoke through node_modules/.bin symlinks, while
+// the ESM loader resolves import.meta.url to the real file — a raw compare
+// would never match and main() would never run under npx.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main(process.argv.slice(2)).then(
     (c) => process.exit(c),
     (e) => process.exit(handleRejection(e)),

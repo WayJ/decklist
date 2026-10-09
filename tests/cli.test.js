@@ -3,7 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgv, flagValue, assertRuntime, buildCall, handleRejection } from "../bin/decklist.js";
 import { runInstall } from "../src/commands/install.js";
@@ -24,6 +26,14 @@ test("--help prints usage naming all three commands, exits 0", async () => {
 
 test("--version prints a semver", async () => {
   const { stdout } = await run(process.execPath, [BIN, "--version"]);
+  assert.match(stdout, /^\d+\.\d+\.\d+/);
+});
+
+test("bin runs through a symlink (npm .bin / npx entry) — guard must realpath", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "decklist-symlink-"));
+  const link = join(dir, "decklist");
+  symlinkSync(BIN, link);
+  const { stdout } = await run(process.execPath, [link, "--version"]);
   assert.match(stdout, /^\d+\.\d+\.\d+/);
 });
 
