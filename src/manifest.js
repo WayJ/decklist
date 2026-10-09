@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 export const PERSONA_MAX = 2000;
 
@@ -124,8 +124,4 @@ export function readManifest(dir) {
     throw e;
   }
   return parseManifest(text, file);
-}
-
-export function writeManifest(dir, skills) {
-  writeFileSync(dir + "/decklist.json", JSON.stringify({ skills }, null, 2) + "\n");
 }

@@ -13,6 +13,20 @@ engine (the [`skills` CLI](https://github.com/vercel-labs/skills), via
 
 ## Quickstart
 
+`decklist add` records into a declared agent, so create `decklist.json` first:
+
+```
+cat > decklist.json <<'EOF'
+{
+  "agents": {
+    "dev": { "harness": "claude-code", "skills": {} }
+  }
+}
+EOF
+```
+
+Then:
+
 ```
 decklist add obra/superpowers --agent dev    # install + record under agent "dev"
 npx decklist install                         # or: npm i -g decklist && decklist install

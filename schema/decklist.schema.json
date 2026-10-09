@@ -15,6 +15,7 @@
     "author": { "type": "string", "minLength": 1 },
     "agents": {
       "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,

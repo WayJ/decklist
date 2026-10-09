@@ -97,3 +97,8 @@ test("v0 retained behaviors — invalid JSON, non-object top level, readManifest
   writeFileSync(join(dir, "decklist.json"), JSON.stringify(doc({ dev: agent() })));
   assert.equal(readManifest(dir).agents.dev.harness, "claude-code");
 });
+
+test("writeManifest is not exported — it wrote the v0 shape this parser rejects (review F1)", async () => {
+  const m = await import("../src/manifest.js");
+  assert.equal(m.writeManifest, undefined);
+});

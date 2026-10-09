@@ -119,7 +119,7 @@ decklist 从"skill 依赖管理器"升级为**声明式多 agent 环境定义**:
 | 场景 | 行为 |
 |---|---|
 | 顶层 `skills` | 一行错误,指引"skills 挂 agent",exit 1 |
-| agent 名不合法 / 穿越段 | `<file>: agents.<name>: invalid agent name`,exit 1 |
+| agent 名不合法 / 穿越段 | `<file>: agents: invalid agent name: <name>`,exit 1 |
 | `harness` 缺失或空串 | `<file>: agents.<name>.harness: required non-empty`,exit 1 |
 | persona 超 2000 字符 | `<file>: agents.<name>.persona: exceeds 2000 characters`,exit 1 |
 | 基础字段类型/模式不符 | `<file>: <field>: <reason>`,exit 1 |

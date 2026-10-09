@@ -1,7 +1,7 @@
 {
   "name": "decklist",
   "version": "0.1.0",
-  "description": "Declarative skill dependency manager: decklist.json + one-command install",
+  "description": "Declarative multi-agent environment definition: named agents (harness + persona + skills), one-command install",
   "keywords": ["skills", "agent", "claude", "ai", "dependency-manager", "cli"],
   "author": "WayJ",
   "repository": {
